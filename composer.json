@@ -1,0 +1,16 @@
+{
+    "name": "mikk150/visma-oauth",
+    "license": "LGPL-2.1", 
+    "authors": [
+        {
+            "name": "Mikk Tendermann",
+            "email": "mikk150@gmail.com"
+        }
+    ],
+    "require": {
+        "adoy/oauth2": "1.2.*"
+    },
+    "autoload": {
+        "psr-4": {"mikk150\\Visma\\": "src/Visma"}
+    }
+}
