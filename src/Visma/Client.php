@@ -72,7 +72,7 @@ class Client
 
     public function tokenExpired()
     {
-        return $this->_storage->getTimeout() > time();
+        return $this->_storage->getTimeout() < time();
     }
 
     public function getAuthToken($code)
