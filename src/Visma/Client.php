@@ -1,7 +1,7 @@
 <?php
 namespace mikk150\Visma;
 
-use OAuth2;
+use \OAuth2;
 
 /**
  *
@@ -13,7 +13,10 @@ class Client
     private $_storage;
     private $_config;
 
-    public function __construct($secret, $id, IStorage $tokenStorage = null, IConfig $config = null, \OAuth2\Client $oauth2 = null)
+    private $_id;
+    private $_secret;
+
+    public function __construct($secret, $id, IStorage $tokenStorage = null, Config\IConfig $config = null, \OAuth2\Client $oauth2 = null)
     {
 
         // Token Storage
@@ -25,7 +28,7 @@ class Client
 
         // Oauth
         if (!$oauth2) {
-            $oauth2 = new \OAuth2\Client($id, $secret);
+            $oauth2 = new \OAuth2\Client($id, $secret, OAuth2\Client::AUTH_TYPE_AUTHORIZATION_BASIC);
         }
 
         $this->_oauth2 = $oauth2;
@@ -42,20 +45,58 @@ class Client
 
     public function init()
     {
-        if (!$this->_storage->getState() && !isset($_GET['code'])) {
-            $this->getAuthCode();
-        } else if (!$this->_storage->getState() && isset($_GET['code'])) {
-            $this->getAuthToken($_GET['code']);
+        if (!$this->_storage->getRefreshToken() && !$this->_storage->getAccessToken()) {
+            //Get the token by logging in
+            if (!$this->_storage->getState() && !isset($_GET['code']) && !isset($_GET['error'])) {
+                $this->getAuthCode();
+            } else if (!$this->_storage->getState() && isset($_GET['code'])) {
+                $this->getAuthToken($_GET['code']);
+            } else if (isset($_GET['error'])) {
+                $this->handleError($_GET['error']);
+            }
+        } else if ($this->tokenExpired()) {
+            $this->refreshAuthToken($this->_storage->getRefreshToken());
+            //Get the token by refresh
+        } else {
+
         }
+        $this->_oauth2->setAccessTokenType(OAuth2\Client::ACCESS_TOKEN_BEARER);
         $this->_oauth2->setAccessToken($this->_storage->getAccessToken());
+    }
+
+    public function handleError($error)
+    {
+        echo 'error';
+        die();
+    }
+
+    public function tokenExpired()
+    {
+        return $this->_storage->getTimeout() > time();
     }
 
     public function getAuthToken($code)
     {
-        $params = array('code' => $code, 'redirect_uri' => $this->_config->redirectUri());
+        $params = array(
+            'code' => $code,
+            'redirect_uri' => $this->_config->redirectUri(),
+        );
+
         $at = $this->_oauth2->getAccessToken($this->_config->tokenEndpoint(), 'authorization_code', $params);
-        $this->_storage->setState(1);
         $this->_storage->setAccessToken($at['result']['access_token']);
+        $this->_storage->setRefreshToken($at['result']['refresh_token']);
+        $this->_storage->setTimeout($at['result']['expires_in']);
+    }
+    public function refreshAuthToken($refreshToken)
+    {
+        $params = array(
+            'refresh_token' => $refreshToken,
+        );
+
+        $at = $this->_oauth2->getAccessToken($this->_config->tokenEndpoint(), 'refresh_token', $params);
+        $this->_storage->setAccessToken($at['result']['access_token']);
+        $this->_storage->setRefreshToken($at['result']['refresh_token']);
+        $this->_storage->setTimeout($at['result']['expires_in']);
     }
     public function getAuthCode()
     {
@@ -84,13 +125,8 @@ interface IStorage
     public function getRefreshToken();
     public function setState($value);
     public function getState();
-}
-interface IConfig
-{
-    public function authEndpoint();
-    public function tokenEndpoint();
-    public function redirectUri();
-    public function getScope();
+    public function setTimeout($value);
+    public function getTimeout();
 }
 
 /**
@@ -135,80 +171,15 @@ class SessionStorage implements IStorage
     {
         $_SESSION['accessToken'] = $value;
     }
-}
-class DefaultConfig implements IConfig
-{
-    public function authEndpoint()
+    public function setTimeout($value)
     {
-        return 'https://auth.vismaonline.com/eaccountingapi/oauth/authorize';
+        $_SESSION['timeout'] = $value + time();
     }
-    public function tokenEndpoint()
+    public function getTimeout()
     {
-        return 'https://auth.vismaonline.com/eaccountingapi/oauth/token';
-    }
-    public function getScope()
-    {
-        return 'sales';
-    }
-    public function redirectUri()
-    {
-        return 'http://localhost/newtime/Visma/';
-    }
-}
-class TestConfig implements IConfig
-{
-    public function authEndpoint()
-    {
-        return 'https://auth-sandbox.test.vismaonline.com/eaccountingapi/oauth/authorize';
-    }
-    public function tokenEndpoint()
-    {
-        return 'https://auth-sandbox.test.vismaonline.com/eaccountingapi/oauth/token';
-    }
-    public function getScope()
-    {
-        return 'sales';
-    }
-    public function redirectUri()
-    {
-        return 'http://localhost/newtime/Visma/';
-    }
-}
-class FBConfig implements IConfig
-{
-    public function authEndpoint()
-    {
-        return 'https://graph.facebook.com/oauth/authorize';
-    }
-    public function tokenEndpoint()
-    {
-        return 'https://graph.facebook.com/oauth/access_token';
-    }
-    public function getScope()
-    {
-        return '';
-    }
-    public function redirectUri()
-    {
-        return 'http://localhost/newtime/Visma/';
-    }
-}
-class GoogConfig implements IConfig
-{
-    public function authEndpoint()
-    {
-        return 'https://accounts.google.com/o/oauth2/auth';
-    }
-    public function tokenEndpoint()
-    {
-        return 'https://accounts.google.com/o/oauth2/token';
-    }
-    public function getScope()
-    {
-        return 'https://www.googleapis.com/auth/drive.readonly';
-    }
-    public function redirectUri()
-    {
-        return 'http://localhost/newtime/Visma/';
+        if (isset($_SESSION['timeout'])) {
+            return $_SESSION['timeout'];
+        }
+        return 0;
     }
 }
